@@ -16,13 +16,13 @@ export default function CargadorPage() {
 
   return (
     <div>
-      <div className="tabs">
+      <nav className="tabs" aria-label="Secciones del Cargador">
         {TABS.map((t) => (
-          <button key={t.id} className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)}>
+          <button key={t.id} className={tab === t.id ? "active" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
             {t.label}
           </button>
         ))}
-      </div>
+      </nav>
       {tab === "empresas" && <EmpresasPage />}
       {tab === "puertos" && <PuertosPage />}
       {tab === "items" && <ItemsPage />}

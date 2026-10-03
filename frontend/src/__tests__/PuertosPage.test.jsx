@@ -55,8 +55,31 @@ describe("PuertosPage", () => {
     render(<PuertosPage />);
     const botones = await screen.findAllByRole("button", { name: "Eliminar" });
     await userEvent.click(botones[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
     expect(api.eliminarPuerto).toHaveBeenCalledWith(1);
+    expect(await screen.findByText("Puerto eliminado.")).toBeInTheDocument();
     await userEvent.click(botones[1]);
+    await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
     expect(await screen.findByText(/está en uso por 2/)).toBeInTheDocument();
+  });
+});
+
+describe("PuertosPage — UX", () => {
+  it("avisa al crear y muestra el estado vacío cuando no hay puertos", async () => {
+    api.listarPuertos.mockResolvedValue([]);
+    api.crearPuerto.mockResolvedValue({});
+    render(<PuertosPage />);
+    expect(await screen.findByText("Aún no hay puertos en el catálogo.")).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Nombre"), " Miami ");
+    await userEvent.click(screen.getByRole("button", { name: "Agregar puerto" }));
+    expect(await screen.findByRole("status")).toHaveTextContent('Puerto "Miami" agregado.');
+  });
+
+  it("Cancelar la confirmación no elimina", async () => {
+    render(<PuertosPage />);
+    const botones = await screen.findAllByRole("button", { name: "Eliminar" });
+    await userEvent.click(botones[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(api.eliminarPuerto).not.toHaveBeenCalled();
   });
 });

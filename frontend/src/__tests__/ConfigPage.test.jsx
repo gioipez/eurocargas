@@ -20,6 +20,7 @@ describe("ConfigPage", () => {
     api.actualizarConfig.mockResolvedValue({});
     render(<ConfigPage />);
     const input = await screen.findByLabelText(/Tasa de cambio/);
+    await screen.findByDisplayValue("4000"); // el valor llega async; escribir antes lo sobrescribiría
     await userEvent.clear(input);
     await userEvent.type(input, "4250.5");
     await userEvent.click(screen.getByRole("button", { name: "Guardar" }));

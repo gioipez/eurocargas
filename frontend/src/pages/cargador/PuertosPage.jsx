@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api.js";
+import ConfirmButton from "../../components/ConfirmButton.jsx";
 
 const initialForm = { nombre: "", codigo: "", pais: "" };
 
@@ -7,6 +8,7 @@ export default function PuertosPage() {
   const [puertos, setPuertos] = useState([]);
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState(null);
+  const [aviso, setAviso] = useState(null);
 
   const cargar = () => api.listarPuertos().then(setPuertos).catch((e) => setError(e.message));
 
@@ -17,12 +19,14 @@ export default function PuertosPage() {
   const onSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setAviso(null);
     try {
       await api.crearPuerto({
         nombre: form.nombre,
         codigo: form.codigo.trim() ? form.codigo.trim().toUpperCase() : null,
         pais: form.pais.trim() || null,
       });
+      setAviso(`Puerto "${form.nombre.trim()}" agregado.`);
       setForm(initialForm);
       cargar();
     } catch (err) {
@@ -32,8 +36,10 @@ export default function PuertosPage() {
 
   const onDelete = async (id) => {
     setError(null);
+    setAviso(null);
     try {
       await api.eliminarPuerto(id);
+      setAviso("Puerto eliminado.");
       cargar();
     } catch (err) {
       setError(err.message);
@@ -44,7 +50,8 @@ export default function PuertosPage() {
     <div className="card">
       <h2>Puertos y aeropuertos</h2>
       <p className="muted">Catálogo único de origen/destino. Los ítems solo pueden usar puertos de esta lista.</p>
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
+      {aviso && <div className="success-banner" role="status">{aviso}</div>}
       <form className="inline-form" onSubmit={onSubmit}>
         <label>
           Nombre
@@ -60,19 +67,22 @@ export default function PuertosPage() {
         </label>
         <button className="primary" type="submit">Agregar puerto</button>
       </form>
-      <table>
-        <thead><tr><th>Nombre</th><th>Código</th><th>País</th><th></th></tr></thead>
-        <tbody>
-          {puertos.map((p) => (
-            <tr key={p.id}>
-              <td>{p.nombre}</td>
-              <td>{p.codigo ?? <span className="muted">Sin código</span>}</td>
-              <td>{p.pais ?? <span className="muted">—</span>}</td>
-              <td><button className="secondary" onClick={() => onDelete(p.id)}>Eliminar</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Nombre</th><th>Código</th><th>País</th><th></th></tr></thead>
+          <tbody>
+            {puertos.length === 0 && <tr><td colSpan={4} className="empty-state">Aún no hay puertos en el catálogo.</td></tr>}
+            {puertos.map((p) => (
+              <tr key={p.id}>
+                <td><span className="empresa-nombre">{p.nombre}</span></td>
+                <td>{p.codigo ?? <span className="muted">Sin código</span>}</td>
+                <td>{p.pais ?? <span className="muted">—</span>}</td>
+                <td><ConfirmButton mensaje="¿Eliminar puerto?" onConfirm={() => onDelete(p.id)} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

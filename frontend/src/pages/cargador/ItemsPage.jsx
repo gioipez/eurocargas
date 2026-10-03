@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api.js";
-import { CONCEPTOS_RECARGO, FRECUENCIAS, INCOTERMS, formatRecargos, formatTransito, frecuenciaLabel } from "../../labels.js";
+import ConfirmButton from "../../components/ConfirmButton.jsx";
+import { CONCEPTOS_RECARGO, FRECUENCIAS, INCOTERMS, UNIDAD_CORTA, formatRecargos, formatTransito, formatUsd, frecuenciaLabel } from "../../labels.js";
 
 const TIPOS = [
   { value: "contenedor_maritimo", label: "Contenedor marítimo (FCL)" },
@@ -41,11 +42,14 @@ export default function ItemsPage() {
   const [puertos, setPuertos] = useState([]);
   const [recargos, setRecargos] = useState(initialRecargos);
   const [editandoId, setEditandoId] = useState(null);
+  const [aviso, setAviso] = useState(null);
+  const [busqueda, setBusqueda] = useState("");
+  const [cargando, setCargando] = useState(true);
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState(null);
 
   const cargar = () => {
-    api.listarItems().then(setItems).catch((e) => setError(e.message));
+    api.listarItems().then(setItems).catch((e) => setError(e.message)).finally(() => setCargando(false));
     api.listarEmpresas().then(setEmpresas).catch((e) => setError(e.message));
     api.listarPuertos().then(setPuertos).catch((e) => setError(e.message));
   };
@@ -65,6 +69,7 @@ export default function ItemsPage() {
 
   const onEditar = (it) => {
     setError(null);
+    setAviso(null);
     setEditandoId(it.id);
     setForm({
       empresa_id: String(it.empresa_id),
@@ -96,6 +101,7 @@ export default function ItemsPage() {
   const onSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setAviso(null);
     try {
       const payload = {
         ...form,
@@ -107,9 +113,11 @@ export default function ItemsPage() {
         vigencia_dias: Number(form.vigencia_dias),
         transito_dias: Number(form.transito_dias),
       };
-      if (editandoId) await api.actualizarItem(editandoId, payload);
+      const edicion = Boolean(editandoId);
+      if (edicion) await api.actualizarItem(editandoId, payload);
       else await api.crearItem(payload);
       limpiarFormulario();
+      setAviso(edicion ? "Ítem actualizado." : "Ítem agregado.");
       cargar();
     } catch (err) {
       setError(err.message);
@@ -118,8 +126,10 @@ export default function ItemsPage() {
 
   const onDelete = async (id) => {
     setError(null);
+    setAviso(null);
     try {
       await api.eliminarItem(id);
+      setAviso("Ítem eliminado.");
       if (id === editandoId) limpiarFormulario();
       cargar();
     } catch (err) {
@@ -127,125 +137,181 @@ export default function ItemsPage() {
     }
   };
 
+  const termino = busqueda.trim().toLowerCase();
+  const visibles = termino
+    ? items.filter((it) => [it.empresa.nombre, it.descripcion, it.origen, it.destino].some((t) => t.toLowerCase().includes(termino)))
+    : items;
+
   return (
     <div className="card">
       <h2>{editandoId ? `Editando ítem #${editandoId}` : "Ítems de costo"}</h2>
-      {error && <div className="error-banner">{error}</div>}
-      <form className="inline-form" onSubmit={onSubmit}>
-        <label>
-          Empresa
-          <select value={form.empresa_id} onChange={set("empresa_id")} required>
-            <option value="" disabled>Seleccionar...</option>
-            {empresas.map((emp) => <option key={emp.id} value={emp.id}>{emp.nombre}</option>)}
-          </select>
-        </label>
-        <label>
-          Tipo de ítem
-          <select value={form.tipo} onChange={set("tipo")}>
-            {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
-        </label>
-        <label>
-          Descripción
-          <input value={form.descripcion} onChange={set("descripcion")} placeholder="Contenedor 40' estándar" required />
-        </label>
-        <label>
-          Origen
-          <select value={form.origen} onChange={set("origen")} required>
-            <option value="" disabled>Seleccionar...</option>
-            {puertos.map((p) => <option key={p.id} value={p.nombre}>{p.nombre}{p.codigo ? ` (${p.codigo})` : ""}</option>)}
-          </select>
-        </label>
-        <label>
-          Destino
-          <select value={form.destino} onChange={set("destino")} required>
-            <option value="" disabled>Seleccionar...</option>
-            {puertos.map((p) => <option key={p.id} value={p.nombre}>{p.nombre}{p.codigo ? ` (${p.codigo})` : ""}</option>)}
-          </select>
-        </label>
-        <label>
-          Unidad de tarifa
-          <select value={form.unidad_tarifa} onChange={set("unidad_tarifa")}>
-            {UNIDADES.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
-          </select>
-        </label>
-        <label>
-          Costo base (USD)
-          <input type="number" step="0.01" min="0.01" value={form.costo_base} onChange={set("costo_base")} required />
-        </label>
-        <label>
-          Recargos consolidados (%)
-          <input type="number" step="0.1" min="0" value={hayDesglose ? totalDesglose.toFixed(2) : form.impuestos_pct}
-                 onChange={set("impuestos_pct")} disabled={hayDesglose} required />
-          {hayDesglose && <span className="muted">Suma del desglose</span>}
-        </label>
-        <label>
-          Tipo de importación
-          <select value={form.tipo_importacion} onChange={set("tipo_importacion")}>
-            {IMPORTACION.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </label>
-        <label>
-          Vigencia (días)
-          <input type="number" min="1" value={form.vigencia_dias} onChange={set("vigencia_dias")} required />
-        </label>
-        <label>
-          Tránsito (días)
-          <input type="number" min="1" step="1" value={form.transito_dias} onChange={set("transito_dias")} required />
-        </label>
-        <label>
-          Frecuencia de salidas
-          <select value={form.frecuencia} onChange={set("frecuencia")} required>
-            <option value="" disabled>Seleccionar...</option>
-            {FRECUENCIAS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-          </select>
-        </label>
-        <label>
-          Incoterm cubierto
-          <select value={form.incoterm} onChange={set("incoterm")} required>
-            <option value="" disabled>Seleccionar...</option>
-            {INCOTERMS.map((i) => <option key={i} value={i}>{i}</option>)}
-          </select>
-        </label>
-        <div className="recargos-grid">
-          {CONCEPTOS_RECARGO.map((c) => (
-            <label key={c.value}>
-              {c.label} (%)
-              <input type="number" step="0.1" min="0" value={recargos[c.value]}
-                     onChange={(e) => setRecargos({ ...recargos, [c.value]: e.target.value })} placeholder="No aplica" />
+      {error && <div className="error-banner" role="alert">{error}</div>}
+      {aviso && <div className="success-banner" role="status">{aviso}</div>}
+      <form className="form-sections" onSubmit={onSubmit}>
+        <fieldset>
+          <legend>Servicio</legend>
+          <div className="field-grid">
+            <label>
+              Empresa
+              <select value={form.empresa_id} onChange={set("empresa_id")} required>
+                <option value="" disabled>Seleccionar...</option>
+                {empresas.map((emp) => <option key={emp.id} value={emp.id}>{emp.nombre}</option>)}
+              </select>
             </label>
-          ))}
+            <label>
+              Tipo de ítem
+              <select value={form.tipo} onChange={set("tipo")}>
+                {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </label>
+            <label>
+              Descripción
+              <input value={form.descripcion} onChange={set("descripcion")} placeholder="Contenedor 40' estándar" required />
+            </label>
+            <label>
+              Tipo de importación
+              <select value={form.tipo_importacion} onChange={set("tipo_importacion")}>
+                {IMPORTACION.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Ruta</legend>
+          <div className="field-grid">
+            <label>
+              Origen
+              <select value={form.origen} onChange={set("origen")} required>
+                <option value="" disabled>Seleccionar...</option>
+                {puertos.map((p) => <option key={p.id} value={p.nombre}>{p.nombre}{p.codigo ? ` (${p.codigo})` : ""}</option>)}
+              </select>
+            </label>
+            <label>
+              Destino
+              <select value={form.destino} onChange={set("destino")} required>
+                <option value="" disabled>Seleccionar...</option>
+                {puertos.map((p) => <option key={p.id} value={p.nombre}>{p.nombre}{p.codigo ? ` (${p.codigo})` : ""}</option>)}
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Tarifa y vigencia</legend>
+          <div className="field-grid">
+            <label>
+              Unidad de tarifa
+              <select value={form.unidad_tarifa} onChange={set("unidad_tarifa")}>
+                {UNIDADES.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+              </select>
+            </label>
+            <label>
+              Costo base (USD)
+              <input type="number" step="0.01" min="0.01" value={form.costo_base} onChange={set("costo_base")} required />
+            </label>
+            <label>
+              Recargos consolidados (%)
+              <input type="number" step="0.1" min="0" value={hayDesglose ? totalDesglose.toFixed(2) : form.impuestos_pct}
+                     onChange={set("impuestos_pct")} disabled={hayDesglose} required />
+              {hayDesglose && <span className="muted">Suma del desglose</span>}
+            </label>
+            <label>
+              Vigencia (días)
+              <input type="number" min="1" value={form.vigencia_dias} onChange={set("vigencia_dias")} required />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Condiciones de la oferta</legend>
+          <p className="hint">Permiten al comercial comparar ofertas de forma objetiva.</p>
+          <div className="field-grid">
+            <label>
+              Tránsito (días)
+              <input type="number" min="1" step="1" value={form.transito_dias} onChange={set("transito_dias")} required />
+            </label>
+            <label>
+              Frecuencia de salidas
+              <select value={form.frecuencia} onChange={set("frecuencia")} required>
+                <option value="" disabled>Seleccionar...</option>
+                {FRECUENCIAS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+            </label>
+            <label>
+              Incoterm cubierto
+              <select value={form.incoterm} onChange={set("incoterm")} required>
+                <option value="" disabled>Seleccionar...</option>
+                {INCOTERMS.map((i) => <option key={i} value={i}>{i}</option>)}
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="ancho-completo">
+          <legend>Desglose de recargos (opcional)</legend>
+          <p className="hint">Porcentajes sobre el costo base. Si completas alguno, el total se calcula solo; déjalos vacíos si no aplican.</p>
+          <div className="field-grid">
+            {CONCEPTOS_RECARGO.map((c) => (
+              <label key={c.value}>
+                {c.label} (%)
+                <input type="number" step="0.1" min="0" value={recargos[c.value]}
+                       onChange={(e) => setRecargos({ ...recargos, [c.value]: e.target.value })} placeholder="No aplica" />
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="form-actions">
+          <button className="primary" type="submit">{editandoId ? "Guardar cambios" : "Agregar ítem"}</button>
+          {editandoId && <button className="secondary" type="button" onClick={limpiarFormulario}>Cancelar edición</button>}
         </div>
-        <button className="primary" type="submit">{editandoId ? "Guardar cambios" : "Agregar ítem"}</button>
-        {editandoId && <button className="secondary" type="button" onClick={limpiarFormulario}>Cancelar edición</button>}
       </form>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Empresa</th><th>Tipo</th><th>Ruta</th><th>Tarifa</th><th>Recargos</th><th>Incoterm</th><th>Tránsito</th><th>Salidas</th><th>Vigencia</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((it) => (
-            <tr key={it.id} className={it.id === editandoId ? "selected" : ""}>
-              <td>{it.empresa.nombre}</td>
-              <td>{it.descripcion}</td>
-              <td>{it.origen} → {it.destino}</td>
-              <td>${it.costo_base} <span className="muted">({UNIDADES.find((u) => u.value === it.unidad_tarifa)?.label})</span></td>
-              <td>{formatRecargos(it)}</td>
-              <td>{it.incoterm ?? <span className="muted">Sin dato</span>}</td>
-              <td>{formatTransito(it.transito_dias)}</td>
-              <td>{frecuenciaLabel(it.frecuencia)}</td>
-              <td>{it.vigencia_dias} días</td>
-              <td>
-                <button className="secondary" onClick={() => onEditar(it)}>Editar</button>{" "}
-                <button className="secondary" onClick={() => onDelete(it.id)}>Eliminar</button>
-              </td>
+      <h3>Tarifas cargadas <span className="muted">({visibles.length}{termino ? ` de ${items.length}` : ""})</span></h3>
+      <input
+        type="search"
+        className="search-box"
+        aria-label="Buscar ítems"
+        placeholder="Buscar por empresa, ruta o servicio…"
+        value={busqueda}
+        onChange={(e) => setBusqueda(e.target.value)}
+      />
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Empresa</th><th>Tipo</th><th>Ruta</th><th className="num">Tarifa</th><th>Recargos</th><th>Incoterm</th><th>Tránsito</th><th>Salidas</th><th>Vigencia</th><th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {cargando && <tr><td colSpan={10} className="empty-state">Cargando…</td></tr>}
+            {!cargando && visibles.length === 0 && (
+              <tr><td colSpan={10} className="empty-state">{items.length === 0 ? "Aún no hay ítems. Agrega el primero con el formulario." : "Ningún ítem coincide con la búsqueda."}</td></tr>
+            )}
+            {visibles.map((it) => (
+              <tr key={it.id} className={it.id === editandoId ? "selected" : ""}>
+                <td><span className="empresa-nombre">{it.empresa.nombre}</span></td>
+                <td>{it.descripcion}</td>
+                <td>{it.origen} → {it.destino}</td>
+                <td className="num nowrap">{formatUsd(it.costo_base)} <span className="muted">{UNIDAD_CORTA[it.unidad_tarifa]}</span></td>
+                <td className="muted">{formatRecargos(it)}</td>
+                <td>{it.incoterm ?? <span className="muted">Sin dato</span>}</td>
+                <td>{formatTransito(it.transito_dias)}</td>
+                <td>{frecuenciaLabel(it.frecuencia)}</td>
+                <td>{it.vigencia_dias} días</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="secondary" onClick={() => onEditar(it)}>Editar</button>
+                    <ConfirmButton mensaje="¿Eliminar ítem?" onConfirm={() => onDelete(it.id)} />
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

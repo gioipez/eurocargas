@@ -1,9 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api.js";
 import WizardPage from "../pages/comercial/WizardPage.jsx";
 import { makeItem } from "../test/fixtures.js";
+import { cleanup } from "@testing-library/react";
 
 vi.mock("../api.js");
 
@@ -54,8 +55,8 @@ describe("WizardPage — cuadro comparativo", () => {
 
   it("compara con costo total (base + recargos), ordenado por precio, vigencia y alerta de Incoterm", async () => {
     await hastaElCuadro();
-    expect(textosDeFila(1)).toEqual(expect.arrayContaining(["Maersk", "$2996.00", "2026-01-31"])); // 2800 * 1.07
-    expect(textosDeFila(2)).toEqual(expect.arrayContaining(["Hapag-Lloyd", "$3156.50"]));
+    expect(textosDeFila(1)).toEqual(expect.arrayContaining(["Maersk", "$2,996.00", "2026-01-31"])); // 2800 * 1.07
+    expect(textosDeFila(2)).toEqual(expect.arrayContaining(["Hapag-Lloyd", "$3,156.50"]));
     expect(screen.getByText(/no cubren el mismo Incoterm/)).toHaveTextContent("FOB, CIF");
   });
 
@@ -88,7 +89,7 @@ describe("WizardPage — cuadro comparativo", () => {
     await elegir(/2\. Destino/, "Cartagena");
     await elegir(/3\. Tipo de mercancía/, "importacion");
     await elegir(/4\. Tipo de ítem/, "contenedor_maritimo");
-    expect(textosDeFila(1)).toContain("$2996.00"); // sin multiplicar por los 100 kg anteriores
+    expect(textosDeFila(1)).toContain("$2,996.00"); // sin multiplicar por los 100 kg anteriores
   });
 
   it("cambiar una selección previa reinicia las posteriores y la fila elegida", async () => {
@@ -178,5 +179,93 @@ describe("WizardPage — generar cotización", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Nueva cotización" }));
     expect(screen.getByText("Wizard de cotización")).toBeInTheDocument();
     expect(screen.queryByText("Margen y datos de la cotización")).not.toBeInTheDocument();
+  });
+});
+
+describe("WizardPage — UX", () => {
+  async function conSeleccion() {
+    await hastaElCuadro();
+    await userEvent.click(screen.getAllByRole("radio")[0]); // Maersk 40': costo 2,996.00
+  }
+
+  it("muestra 'Cargando tarifas…' hasta que llegan los datos", async () => {
+    let resolver;
+    api.listarItems.mockReturnValue(new Promise((r) => { resolver = r; }));
+    render(<WizardPage />);
+    expect(screen.getByText("Cargando tarifas…")).toBeInTheDocument();
+    await act(async () => { resolver([maersk]); });
+    expect(screen.queryByText("Cargando tarifas…")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/1\. Origen/)).toBeVisible();
+  });
+
+  it("sin tarifas cargadas explica qué hacer; con error no muestra ese estado vacío", async () => {
+    api.listarItems.mockResolvedValue([]);
+    render(<WizardPage />);
+    expect(await screen.findByText(/Aún no hay tarifas cargadas/)).toBeInTheDocument();
+    cleanup();
+
+    api.listarItems.mockRejectedValue(new Error("sin conexión"));
+    render(<WizardPage />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("sin conexión");
+    expect(screen.queryByText(/Aún no hay tarifas cargadas/)).not.toBeInTheDocument();
+  });
+
+  it("vista previa en USD: costo + margen = precio final estimado, y se actualiza con el margen", async () => {
+    await conSeleccion();
+    const vista = () => document.querySelector(".preview").textContent;
+    expect(vista()).toContain("Costo $2,996.00");
+    expect(vista()).toContain("Margen $299.60"); // 10% por defecto
+    expect(vista()).toContain("Precio final estimado $3,295.60");
+
+    await elegir(/Tipo de margen/, "monto_fijo_total");
+    const valor = screen.getByLabelText(/^Valor/);
+    await userEvent.clear(valor);
+    await userEvent.type(valor, "150");
+    expect(vista()).toContain("Margen $150.00");
+    expect(vista()).toContain("Precio final estimado $3,146.00");
+  });
+
+  it("la vista previa coincide con lo que calcula el backend (misma fórmula que _calcular_costos)", async () => {
+    await conSeleccion();
+    await elegir(/Tipo de margen/, "porcentaje_item");
+    const valor = screen.getByLabelText(/^Valor/);
+    await userEvent.clear(valor);
+    await userEvent.type(valor, "0");
+    expect(document.querySelector(".preview").textContent).toContain("Precio final estimado $2,996.00");
+  });
+
+  it("en COP añade el equivalente con la tasa elegida", async () => {
+    await conSeleccion();
+    expect(document.querySelector(".preview").textContent).not.toContain("COP");
+    await elegir(/Moneda de la cotización/, "COP");
+    expect(document.querySelector(".preview").textContent).toContain("≈ COP $13,182,400"); // 3295.6 * 4000
+    const tasa = screen.getByLabelText(/Tasa de cambio/);
+    await userEvent.clear(tasa);
+    await userEvent.type(tasa, "3900");
+    expect(document.querySelector(".preview").textContent).toContain("≈ COP $12,852,840");
+  });
+
+  it("avisa (sin bloquear) cuando la tarifa seleccionada está vencida", async () => {
+    api.listarItems.mockResolvedValue([makeItem({ id: 1, fecha_creacion: "2025-11-01T00:00:00", vigencia_dias: 30 })]);
+    await hastaElCuadro();
+    expect(screen.queryByText(/Esta tarifa venció/)).not.toBeInTheDocument(); // hasta elegir una
+    await userEvent.click(screen.getByRole("radio"));
+    expect(screen.getByRole("alert")).toHaveTextContent("Esta tarifa venció el 2025-12-01");
+    await userEvent.type(screen.getByLabelText("Cliente final"), "ACME");
+    await userEvent.click(screen.getByRole("button", { name: "Generar cotización y PDF" }));
+    expect(api.crearCotizacion).toHaveBeenCalled(); // no bloquea
+  });
+
+  it("no avisa con una tarifa vigente", async () => {
+    await conSeleccion();
+    expect(screen.queryByText(/Esta tarifa venció/)).not.toBeInTheDocument();
+  });
+
+  it("separa 20' y 40' en grupos dentro del cuadro del wizard", async () => {
+    const veinte = makeItem({ id: 7, descripcion: "Contenedor 20' estándar", costo_base: 1800, impuestos_pct: 0.07 });
+    api.listarItems.mockResolvedValue([maersk, hapag, veinte]);
+    await hastaElCuadro();
+    expect([...document.querySelectorAll(".grupo-header")].map((e) => e.textContent.split(" · ")[0]))
+      .toEqual(["Contenedor 20' estándar", "Contenedor 40' estándar"]);
   });
 });

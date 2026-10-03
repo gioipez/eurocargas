@@ -26,8 +26,8 @@ export default function ConfigPage() {
     <div className="card">
       <h2>Configuración global</h2>
       <p className="muted">Todo se cotiza internamente en USD. Esta tasa se usa por defecto para convertir a COP; el comercial puede sobreescribirla en una cotización puntual.</p>
-      {error && <div className="error-banner">{error}</div>}
-      {guardado && <div className="result-box">Tasa de cambio actualizada.</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
+      {guardado && <div className="success-banner" role="status">Tasa de cambio actualizada.</div>}
       <form className="inline-form" onSubmit={onSubmit}>
         <label>
           Tasa de cambio (COP por 1 USD)

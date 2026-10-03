@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api.js";
 import ComparisonTable from "../../components/ComparisonTable.jsx";
 import MarginSelector from "../../components/MarginSelector.jsx";
+import { estadoVigencia, formatUsd } from "../../labels.js";
 
 const TIPO_ITEM_LABEL = {
   contenedor_maritimo: "Contenedor marítimo (FCL)",
@@ -29,6 +30,7 @@ export default function WizardPage() {
   const [items, setItems] = useState([]);
   const [config, setConfig] = useState(null);
   const [error, setError] = useState(null);
+  const [cargando, setCargando] = useState(true);
 
   const [origen, setOrigen] = useState("");
   const [destino, setDestino] = useState("");
@@ -47,7 +49,7 @@ export default function WizardPage() {
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
-    api.listarItems().then(setItems).catch((e) => setError(e.message));
+    api.listarItems().then(setItems).catch((e) => setError(e.message)).finally(() => setCargando(false));
     api.obtenerConfig().then((c) => {
       setConfig(c);
       setTasaCambio(String(c.tasa_cambio_usd_cop));
@@ -78,7 +80,16 @@ export default function WizardPage() {
       .map((item) => ({ item, costoTotal: calcularCostoTotal(item, cant), vigenciaHasta: vigenciaHasta(item) }));
   }, [porImportacion, tipoItem, cantidad]);
 
-  const itemSeleccionado = filasComparativas.find((f) => f.item.id === itemSeleccionadoId)?.item ?? null;
+  const filaSeleccionada = filasComparativas.find((f) => f.item.id === itemSeleccionadoId) ?? null;
+  const itemSeleccionado = filaSeleccionada?.item ?? null;
+
+  // Estimación para la vista previa; el backend sigue siendo la fuente de verdad del cálculo.
+  const margenNumero = Number(valorMargen) || 0;
+  const margenEstimado = filaSeleccionada
+    ? tipoMargen.startsWith("porcentaje") ? filaSeleccionada.costoTotal * (margenNumero / 100) : margenNumero
+    : 0;
+  const precioEstimado = filaSeleccionada ? filaSeleccionada.costoTotal + margenEstimado : 0;
+  const tasaNumero = Number(tasaCambio) || 0;
 
   // Resets en cascada cuando cambia una selección previa.
   const onOrigen = (v) => { setOrigen(v); setDestino(""); setTipoImportacion(""); setTipoItem(""); setItemSeleccionadoId(null); setResultado(null); };
@@ -115,17 +126,16 @@ export default function WizardPage() {
     return (
       <div className="card">
         <h2>Cotización generada</h2>
-        <div className="result-box">
+        <div className="result-box" role="status">
           <p><strong>{resultado.consecutivo}</strong> — cliente: {resultado.cliente_nombre}</p>
-          <p>Precio final: <strong>{simbolo}{(ci.precio_final * factor).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></p>
+          <p>Precio final: <strong>{simbolo}{(ci.precio_final * factor).toLocaleString("en-US", { maximumFractionDigits: 2 })}</strong></p>
           <p className="muted">Vigente hasta {resultado.vigencia_hasta.slice(0, 10)}</p>
         </div>
-        <div style={{ marginTop: 16 }}>
-          <a className="primary" style={{ textDecoration: "none", padding: "8px 16px", borderRadius: 4 }}
-             href={api.descargarPdfUrl(resultado.id)} target="_blank" rel="noreferrer">
+        <div className="wizard-actions">
+          <a className="button-primary" href={api.descargarPdfUrl(resultado.id)} target="_blank" rel="noreferrer">
             Descargar PDF
           </a>
-          <button className="secondary" style={{ marginLeft: 8 }} onClick={() => { setResultado(null); setItemSeleccionadoId(null); }}>
+          <button className="secondary" onClick={() => { setResultado(null); setItemSeleccionadoId(null); }}>
             Nueva cotización
           </button>
         </div>
@@ -136,9 +146,14 @@ export default function WizardPage() {
   return (
     <div className="card">
       <h2>Wizard de cotización</h2>
-      {error && <div className="error-banner">{error}</div>}
+      <p className="muted">Elige la ruta y el tipo de servicio para comparar las ofertas de los proveedores.</p>
+      {error && <div className="error-banner" role="alert">{error}</div>}
+      {cargando && <p className="empty-state">Cargando tarifas…</p>}
+      {!cargando && !error && items.length === 0 && (
+        <p className="empty-state">Aún no hay tarifas cargadas. Pide al Cargador que registre empresas e ítems de costo.</p>
+      )}
 
-      <form className="inline-form">
+      <form className="steps" hidden={cargando || items.length === 0} onSubmit={(e) => e.preventDefault()}>
         <label>
           1. Origen
           <select value={origen} onChange={(e) => onOrigen(e.target.value)}>
@@ -195,6 +210,11 @@ export default function WizardPage() {
       {itemSeleccionado && (
         <form onSubmit={onGenerar}>
           <h3>Margen y datos de la cotización</h3>
+          {estadoVigencia(filaSeleccionada.vigenciaHasta).estado === "vencida" && (
+            <div className="warning-banner" role="alert">
+              Esta tarifa venció el {filaSeleccionada.vigenciaHasta}. Confirma el precio con el proveedor antes de cotizar.
+            </div>
+          )}
           <div className="inline-form">
             <label>
               Cliente final
@@ -216,7 +236,15 @@ export default function WizardPage() {
             )}
           </div>
           <MarginSelector tipoMargen={tipoMargen} valorMargen={valorMargen} onChangeTipo={setTipoMargen} onChangeValor={setValorMargen} />
-          <button className="primary" type="submit" disabled={enviando} style={{ marginTop: 12 }}>
+          <div className="preview" aria-live="polite">
+            <span>Costo {formatUsd(filaSeleccionada.costoTotal)}</span>
+            <span>+ Margen {formatUsd(margenEstimado)}</span>
+            <span className="final">Precio final estimado {formatUsd(precioEstimado)}</span>
+            {moneda === "COP" && tasaNumero > 0 && (
+              <span className="cop">≈ COP ${Math.round(precioEstimado * tasaNumero).toLocaleString("en-US")}</span>
+            )}
+          </div>
+          <button className="primary" type="submit" disabled={enviando}>
             {enviando ? "Generando..." : "Generar cotización y PDF"}
           </button>
         </form>

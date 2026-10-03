@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api.js";
@@ -218,14 +218,17 @@ describe("ItemsPage — eliminar", () => {
   it("elimina y recarga", async () => {
     await renderizar();
     await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
     expect(api.eliminarItem).toHaveBeenCalledWith(1);
     await vi.waitFor(() => expect(api.listarItems).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Ítem eliminado.")).toBeInTheDocument();
   });
 
   it("eliminar el ítem que se está editando sale del modo edición", async () => {
     await renderizar();
     await userEvent.click(screen.getByRole("button", { name: "Editar" }));
     await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
     await vi.waitFor(() => expect(screen.getByRole("heading", { name: "Ítems de costo" })).toBeInTheDocument());
   });
 
@@ -233,6 +236,62 @@ describe("ItemsPage — eliminar", () => {
     api.eliminarItem.mockRejectedValue(new Error("no se pudo eliminar"));
     await renderizar();
     await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
     expect(await screen.findByText("no se pudo eliminar")).toBeInTheDocument();
+  });
+});
+
+describe("ItemsPage — UX", () => {
+  const otro = () => makeItem({ id: 2, descripcion: "Carga aérea general", origen: "Miami", destino: "Bogota",
+    empresa: { id: 3, nombre: "Avianca", tipo: "aerolinea" }, recargos: [] });
+
+  it("Cancelar la confirmación no elimina", async () => {
+    await renderizar();
+    await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(api.eliminarItem).not.toHaveBeenCalled();
+  });
+
+  it("el buscador filtra por empresa, servicio o ruta y muestra el conteo", async () => {
+    api.listarItems.mockResolvedValue([makeItem(), otro()]);
+    await renderizar();
+    expect(screen.getByText("(2)")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Buscar ítems"), "avianca");
+    expect(screen.queryByText("Contenedor 40' estándar", { selector: "td" })).not.toBeInTheDocument();
+    expect(screen.getByText("Carga aérea general", { selector: "td" })).toBeInTheDocument();
+    expect(screen.getByText("(1 de 2)")).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByLabelText("Buscar ítems"));
+    await userEvent.type(screen.getByLabelText("Buscar ítems"), "shanghai");
+    expect(screen.getByText("Contenedor 40' estándar", { selector: "td" })).toBeInTheDocument();
+  });
+
+  it("sin coincidencias lo dice; sin ítems invita a crear el primero", async () => {
+    await renderizar();
+    await userEvent.type(screen.getByLabelText("Buscar ítems"), "zzz");
+    expect(screen.getByText("Ningún ítem coincide con la búsqueda.")).toBeInTheDocument();
+
+    api.listarItems.mockResolvedValue([]);
+    cleanup();
+    render(<ItemsPage />);
+    expect(await screen.findByText(/Aún no hay ítems/)).toBeInTheDocument();
+  });
+
+  it("avisa al agregar y al actualizar", async () => {
+    await renderizar();
+    await completarAlta();
+    await enviar("Agregar ítem");
+    expect(await screen.findByRole("status")).toHaveTextContent("Ítem agregado.");
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    await enviar("Guardar cambios");
+    expect(await screen.findByRole("status")).toHaveTextContent("Ítem actualizado.");
+  });
+
+  it("agrupa el formulario en secciones", async () => {
+    await renderizar();
+    const secciones = screen.getAllByRole("group").map((g) => g.querySelector("legend")?.textContent);
+    expect(secciones).toEqual(expect.arrayContaining(["Servicio", "Ruta", "Tarifa y vigencia", "Condiciones de la oferta", "Desglose de recargos (opcional)"]));
   });
 });
