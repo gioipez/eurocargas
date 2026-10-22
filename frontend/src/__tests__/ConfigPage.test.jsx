@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api.js";
@@ -41,5 +41,36 @@ describe("ConfigPage", () => {
     api.obtenerConfig.mockRejectedValue(new Error("sin conexión"));
     render(<ConfigPage />);
     expect(await screen.findByText("sin conexión")).toBeInTheDocument();
+  });
+});
+
+describe("ConfigPage — estados", () => {
+  it("muestra 'Cargando…' hasta tener la tasa", async () => {
+    render(<ConfigPage />);
+    expect(screen.getByText("Cargando…")).toBeInTheDocument();
+    await screen.findByDisplayValue("4000");
+    expect(screen.queryByText("Cargando…")).not.toBeInTheDocument();
+  });
+
+  it("tasa vacía: error en línea y no guarda", async () => {
+    render(<ConfigPage />);
+    const input = await screen.findByLabelText(/Tasa de cambio/);
+    await screen.findByDisplayValue("4000");
+    await userEvent.clear(input);
+    await userEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveFocus();
+    expect(api.actualizarConfig).not.toHaveBeenCalled();
+  });
+
+  it("mientras guarda deshabilita el botón", async () => {
+    let resolver;
+    api.actualizarConfig.mockReturnValue(new Promise((r) => { resolver = r; }));
+    render(<ConfigPage />);
+    await screen.findByDisplayValue("4000");
+    await userEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    expect(screen.getByRole("button", { name: "Guardando…" })).toBeDisabled();
+    await act(async () => { resolver({}); });
+    expect(await screen.findByRole("status")).toHaveTextContent("Tasa de cambio actualizada.");
   });
 });

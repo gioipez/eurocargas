@@ -126,3 +126,25 @@ def test_validaciones_de_entrada(client, empresa, puertos):
     ):
         assert _cotizar(client, item, **overrides).status_code == 422, overrides
     assert client.get("/api/cotizaciones/1").status_code == 404  # ninguna se creó
+
+
+def test_pdf_es_para_el_cliente_final_sin_datos_internos(client, empresa, puertos):
+    """El PDF lo recibe el cliente: no expone costo del proveedor, margen, tipo de margen ni proveedor."""
+    cot = _cotizar(client, _item(client, empresa)).json()  # costo 2800 + margen 280 = 3080 USD
+    with SessionLocal() as db:
+        html = render_cotizacion_html(_con_relaciones(db, cot["id"]))
+    assert "$3,080.00" in html
+    assert "2,800.00" not in html and "280.00" not in html.replace("3,080.00", "")
+    assert "Porcentaje sobre el costo total" not in html and "Margen" not in html
+    assert "Maersk" not in html
+    assert "POC" not in html
+    assert "COP/USD" not in html  # la tasa solo aparece si la cotización es en COP
+    assert "1 contenedor" in html
+
+
+def test_pdf_muestra_la_cantidad_con_su_unidad(client, empresa, puertos):
+    aereo = _item(client, empresa, tipo="carga_aerea", unidad_tarifa="por_kg", costo_base=4.5, impuestos_pct=0.06)
+    cot = _cotizar(client, aereo, cantidad=100).json()
+    with SessionLocal() as db:
+        html = render_cotizacion_html(_con_relaciones(db, cot["id"]))
+    assert "100 kg" in html

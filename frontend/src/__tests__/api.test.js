@@ -47,6 +47,49 @@ describe("api", () => {
     await expect(api.listarItems()).rejects.toThrow("Error 500");
   });
 
+  it("422 con lista de errores de FastAPI: mensaje legible por campo, nunca [object Object]", async () => {
+    mockFetch({
+      ok: false, status: 422, json: async () => ({
+        detail: [
+          { type: "string_pattern_mismatch", loc: ["body", "codigo"], msg: "String should match pattern '^([A-Z]{3})$'", ctx: { pattern: "x" } },
+          { type: "greater_than", loc: ["body", "costo_base"], msg: "Input should be greater than 0", ctx: { gt: 0 } },
+        ],
+      }),
+    });
+    const error = await api.crearPuerto({}).catch((e) => e);
+    expect(error.message).toBe("Código: el formato no es válido. Costo base: debe ser mayor que 0.");
+    expect(error.message).not.toContain("[object Object]");
+    expect(error.status).toBe(422);
+    expect(error.campos).toEqual({ codigo: "El formato no es válido.", costo_base: "Debe ser mayor que 0." });
+  });
+
+  it("422 con un tipo no traducido conserva el msg original y mapea el nombre del campo", async () => {
+    mockFetch({ ok: false, status: 422, json: async () => ({ detail: [{ type: "otro", loc: ["body", "pais"], msg: "Algo raro" }] }) });
+    await expect(api.crearPuerto({})).rejects.toThrow("País: Algo raro.");
+  });
+
+  it("422 de un validador propio quita el prefijo 'Value error' y sin campo deja solo el mensaje", async () => {
+    mockFetch({
+      ok: false, status: 422, json: async () => ({
+        detail: [
+          { type: "value_error", loc: ["body", "nombre"], msg: "Value error, El nombre no puede estar vacío" },
+          { type: "value_error", loc: ["body"], msg: "Value error, Hay conceptos de recargo repetidos" },
+        ],
+      }),
+    });
+    await expect(api.crearPuerto({})).rejects.toThrow("Nombre: El nombre no puede estar vacío. Hay conceptos de recargo repetidos.");
+  });
+
+  it("detail como objeto suelto también se convierte en texto", async () => {
+    mockFetch({ ok: false, status: 400, json: async () => ({ detail: { type: "missing", loc: ["body", "cliente_nombre"], msg: "Field required" } }) });
+    await expect(api.crearCotizacion({})).rejects.toThrow("Cliente: es obligatorio.");
+  });
+
+  it("sin conexión con el servidor da un mensaje en español", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await expect(api.listarItems()).rejects.toThrow("No se pudo conectar con el servidor");
+  });
+
   it("expone la URL de descarga del PDF", () => {
     expect(api.descargarPdfUrl(3)).toBe("/api/cotizaciones/3/pdf");
   });

@@ -83,3 +83,47 @@ describe("PuertosPage — UX", () => {
     expect(api.eliminarPuerto).not.toHaveBeenCalled();
   });
 });
+
+describe("PuertosPage — validación", () => {
+  it("el código se normaliza mientras se escribe (mayúsculas, sin espacios)", async () => {
+    render(<PuertosPage />);
+    await userEvent.type(screen.getByLabelText(/Código/), "co ctg");
+    expect(screen.getByLabelText(/Código/)).toHaveValue("COCTG");
+  });
+
+  it("un código de 4 caracteres se rechaza en línea sin llamar a la API", async () => {
+    render(<PuertosPage />);
+    await userEvent.type(screen.getByLabelText("Nombre"), "Rotterdam");
+    await userEvent.type(screen.getByLabelText(/Código/), "nlrt");
+    await agregar();
+    const codigo = screen.getByLabelText(/Código/);
+    expect(codigo).toHaveAttribute("aria-invalid", "true");
+    expect(codigo).toHaveFocus();
+    expect(codigo).toHaveAccessibleDescription(expect.stringContaining("Usa 3 letras (IATA) o 5 caracteres (UN/LOCODE)."));
+    expect(api.crearPuerto).not.toHaveBeenCalled();
+  });
+
+  it("la ayuda del código va fuera de la etiqueta y enlazada con aria-describedby", async () => {
+    render(<PuertosPage />);
+    const codigo = screen.getByLabelText("Código (UN/LOCODE o IATA)");
+    expect(codigo).toHaveAccessibleDescription(expect.stringContaining("3 letras (IATA, p. ej. BOG)"));
+  });
+
+  it("un 422 con error por campo se muestra junto al campo", async () => {
+    const error = Object.assign(new Error("Código: el formato no es válido."), { campos: { codigo: "El formato no es válido." } });
+    api.crearPuerto.mockRejectedValue(error);
+    render(<PuertosPage />);
+    await userEvent.type(screen.getByLabelText("Nombre"), "Bogotá");
+    await userEvent.type(screen.getByLabelText(/Código/), "BOG");
+    await agregar();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Código: el formato no es válido.");
+    expect(screen.getByLabelText(/Código/)).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("si falla la carga no muestra el estado vacío", async () => {
+    api.listarPuertos.mockRejectedValue(new Error("sin conexión"));
+    render(<PuertosPage />);
+    await screen.findByRole("alert");
+    expect(screen.queryByText("Aún no hay puertos en el catálogo.")).not.toBeInTheDocument();
+  });
+});

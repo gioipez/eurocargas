@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api.js";
@@ -55,19 +55,19 @@ describe("WizardPage — cuadro comparativo", () => {
 
   it("compara con costo total (base + recargos), ordenado por precio, vigencia y alerta de Incoterm", async () => {
     await hastaElCuadro();
-    expect(textosDeFila(1)).toEqual(expect.arrayContaining(["Maersk", "$2,996.00", "2026-01-31"])); // 2800 * 1.07
-    expect(textosDeFila(2)).toEqual(expect.arrayContaining(["Hapag-Lloyd", "$3,156.50"]));
+    expect(textosDeFila(1)).toEqual(expect.arrayContaining(["Maersk", "USD 2,996.00", "31 ene 2026"])); // 2800 * 1.07
+    expect(textosDeFila(2)).toEqual(expect.arrayContaining(["Hapag-Lloyd", "USD 3,156.50"]));
     expect(screen.getByText(/no cubren el mismo Incoterm/)).toHaveTextContent("FOB, CIF");
   });
 
   it("carga aérea: pide cantidad y multiplica la tarifa por kg; sin cantidad válida oculta el cuadro", async () => {
     await hastaElCuadro({ origen: "Miami", destino: "Bogota", tipo: "carga_aerea" });
-    expect(textosDeFila(1)).toContain("$4.77"); // 4.5 * 1 * 1.06
+    expect(textosDeFila(1)).toContain("USD 4.77"); // 4.5 * 1 * 1.06
 
     const peso = screen.getByLabelText(/5\. Peso \(kg\)/);
     await userEvent.clear(peso);
     await userEvent.type(peso, "100");
-    expect(textosDeFila(1)).toContain("$477.00"); // 4.5 * 100 * 1.06 (igual que el backend)
+    expect(textosDeFila(1)).toContain("USD 477.00"); // 4.5 * 100 * 1.06 (igual que el backend)
 
     await userEvent.clear(peso);
     await userEvent.type(peso, "0");
@@ -89,7 +89,7 @@ describe("WizardPage — cuadro comparativo", () => {
     await elegir(/2\. Destino/, "Cartagena");
     await elegir(/3\. Tipo de mercancía/, "importacion");
     await elegir(/4\. Tipo de ítem/, "contenedor_maritimo");
-    expect(textosDeFila(1)).toContain("$2,996.00"); // sin multiplicar por los 100 kg anteriores
+    expect(textosDeFila(1)).toContain("USD 2,996.00"); // sin multiplicar por los 100 kg anteriores
   });
 
   it("cambiar una selección previa reinicia las posteriores y la fila elegida", async () => {
@@ -127,8 +127,8 @@ describe("WizardPage — generar cotización", () => {
     });
     expect(await screen.findByText("Cotización generada")).toBeInTheDocument();
     expect(screen.getByText("COT-2026-0001")).toBeInTheDocument();
-    expect(screen.getByText(/\$3,295\.6/)).toBeInTheDocument();
-    expect(screen.getByText("Vigente hasta 2026-01-31")).toBeInTheDocument();
+    expect(screen.getByText("USD 3,295.60")).toBeInTheDocument();
+    expect(screen.getByText("Vigente hasta 31 ene 2026")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Descargar PDF" })).toHaveAttribute("href", "/api/cotizaciones/5/pdf");
   });
 
@@ -143,7 +143,7 @@ describe("WizardPage — generar cotización", () => {
     await userEvent.click(screen.getByRole("button", { name: "Generar cotización y PDF" }));
 
     expect(api.crearCotizacion).toHaveBeenCalledWith(expect.objectContaining({ moneda: "COP", tasa_cambio: 3900 }));
-    expect(await screen.findByText(/COP \$12,852,840/)).toBeInTheDocument(); // 3295.6 * 3900
+    expect(await screen.findByText("COP 12,852,840")).toBeInTheDocument(); // 3295.6 * 3900
   });
 
   it("envía el tipo y valor de margen elegidos y la cantidad aérea", async () => {
@@ -213,16 +213,16 @@ describe("WizardPage — UX", () => {
   it("vista previa en USD: costo + margen = precio final estimado, y se actualiza con el margen", async () => {
     await conSeleccion();
     const vista = () => document.querySelector(".preview").textContent;
-    expect(vista()).toContain("Costo $2,996.00");
-    expect(vista()).toContain("Margen $299.60"); // 10% por defecto
-    expect(vista()).toContain("Precio final estimado $3,295.60");
+    expect(vista()).toContain("Costo USD 2,996.00");
+    expect(vista()).toContain("Margen USD 299.60"); // 10% por defecto
+    expect(vista()).toContain("Precio final estimado USD 3,295.60");
 
     await elegir(/Tipo de margen/, "monto_fijo_total");
     const valor = screen.getByLabelText(/^Valor/);
     await userEvent.clear(valor);
     await userEvent.type(valor, "150");
-    expect(vista()).toContain("Margen $150.00");
-    expect(vista()).toContain("Precio final estimado $3,146.00");
+    expect(vista()).toContain("Margen USD 150.00");
+    expect(vista()).toContain("Precio final estimado USD 3,146.00");
   });
 
   it("la vista previa coincide con lo que calcula el backend (misma fórmula que _calcular_costos)", async () => {
@@ -231,18 +231,18 @@ describe("WizardPage — UX", () => {
     const valor = screen.getByLabelText(/^Valor/);
     await userEvent.clear(valor);
     await userEvent.type(valor, "0");
-    expect(document.querySelector(".preview").textContent).toContain("Precio final estimado $2,996.00");
+    expect(document.querySelector(".preview").textContent).toContain("Precio final estimado USD 2,996.00");
   });
 
   it("en COP añade el equivalente con la tasa elegida", async () => {
     await conSeleccion();
     expect(document.querySelector(".preview").textContent).not.toContain("COP");
     await elegir(/Moneda de la cotización/, "COP");
-    expect(document.querySelector(".preview").textContent).toContain("≈ COP $13,182,400"); // 3295.6 * 4000
+    expect(document.querySelector(".preview").textContent).toContain("≈ COP 13,182,400"); // 3295.6 * 4000
     const tasa = screen.getByLabelText(/Tasa de cambio/);
     await userEvent.clear(tasa);
     await userEvent.type(tasa, "3900");
-    expect(document.querySelector(".preview").textContent).toContain("≈ COP $12,852,840");
+    expect(document.querySelector(".preview").textContent).toContain("≈ COP 12,852,840");
   });
 
   it("avisa (sin bloquear) cuando la tarifa seleccionada está vencida", async () => {
@@ -250,7 +250,7 @@ describe("WizardPage — UX", () => {
     await hastaElCuadro();
     expect(screen.queryByText(/Esta tarifa venció/)).not.toBeInTheDocument(); // hasta elegir una
     await userEvent.click(screen.getByRole("radio"));
-    expect(screen.getByRole("alert")).toHaveTextContent("Esta tarifa venció el 2025-12-01");
+    expect(screen.getByRole("alert")).toHaveTextContent("Esta tarifa venció el 1 dic 2025");
     await userEvent.type(screen.getByLabelText("Cliente final"), "ACME");
     await userEvent.click(screen.getByRole("button", { name: "Generar cotización y PDF" }));
     expect(api.crearCotizacion).toHaveBeenCalled(); // no bloquea
@@ -267,5 +267,154 @@ describe("WizardPage — UX", () => {
     await hastaElCuadro();
     expect([...document.querySelectorAll(".grupo-header")].map((e) => e.textContent.split(" · ")[0]))
       .toEqual(["Contenedor 20' estándar", "Contenedor 40' estándar"]);
+  });
+});
+
+describe("WizardPage — stepper", () => {
+  const paso = (nombre) => screen.getByRole("button", { name: new RegExp(`^${nombre}`) });
+  const actual = () => document.querySelector('.stepper [aria-current="step"]').textContent;
+
+  it("marca el paso actual, deshabilita los futuros y avanza con las selecciones", async () => {
+    render(<WizardPage />);
+    await screen.findByRole("option", { name: "Shanghai" });
+    expect(actual()).toContain("Ruta");
+    expect(paso("Servicio")).toBeDisabled();
+    expect(paso("Generar")).toBeDisabled();
+
+    await elegir(/1\. Origen/, "Shanghai");
+    await elegir(/2\. Destino/, "Cartagena");
+    expect(actual()).toContain("Servicio");
+    expect(paso("Ruta")).toBeEnabled();
+    expect(paso("Ruta")).toHaveAccessibleName("Ruta (completado)");
+
+    await elegir(/3\. Tipo de mercancía/, "importacion");
+    await elegir(/4\. Tipo de ítem/, "contenedor_maritimo");
+    expect(actual()).toContain("Comparar");
+    await userEvent.click(screen.getAllByRole("radio")[0]);
+    expect(actual()).toContain("Margen");
+    await userEvent.type(screen.getByLabelText("Cliente final"), "ACME");
+    expect(actual()).toContain("Generar");
+  });
+
+  it("un paso completado lleva el foco a su sección sin reiniciar nada", async () => {
+    await hastaElCuadro();
+    await userEvent.click(screen.getAllByRole("radio")[0]);
+    await userEvent.click(paso("Ruta"));
+    expect(screen.getByRole("heading", { name: "Ruta" })).toHaveFocus();
+    expect(screen.getByLabelText(/2\. Destino/)).toHaveValue("Cartagena");
+    expect(screen.getAllByRole("radio")[0]).toBeChecked();
+  });
+});
+
+describe("WizardPage — resumen y generación", () => {
+  async function conSeleccion() {
+    await hastaElCuadro();
+    await userEvent.click(screen.getAllByRole("radio")[0]); // Maersk
+  }
+  const resumen = () => document.querySelector(".summary-panel");
+  const valorDe = (dt) => within(resumen()).getByText(dt, { selector: "dt" }).nextElementSibling.textContent;
+
+  it("muestra el resumen antes de generar", async () => {
+    await conSeleccion();
+    await userEvent.type(screen.getByLabelText("Cliente final"), "ACME");
+    expect(valorDe("Cliente")).toBe("ACME");
+    expect(valorDe("Ruta")).toBe("Shanghai → Cartagena");
+    expect(valorDe("Proveedor")).toBe("Maersk");
+    expect(valorDe("Incoterm")).toContain("FOB");
+    expect(valorDe("Vigencia")).toContain("Hasta 31 ene 2026");
+    expect(valorDe("Costo")).toBe("USD 2,996.00");
+    expect(valorDe("Margen")).toContain("USD 299.60");
+    expect(valorDe("Precio final")).toBe("USD 3,295.60");
+    expect(valorDe("Moneda")).toBe("USD");
+    expect(within(resumen()).queryByText("≈ COP")).not.toBeInTheDocument();
+
+    await elegir(/Moneda de la cotización/, "COP");
+    expect(valorDe("≈ COP")).toBe("COP 13,182,400");
+  });
+
+  it("advierte en el resumen si las ofertas del servicio tienen Incoterms distintos", async () => {
+    await conSeleccion();
+    expect(resumen()).toHaveTextContent("Otras ofertas de este servicio cubren Incoterms distintos (FOB, CIF)");
+  });
+
+  it("avisa sin bloquear cuando el margen es 0", async () => {
+    await conSeleccion();
+    expect(screen.queryByText(/El margen es 0/)).not.toBeInTheDocument();
+    const valor = screen.getByLabelText(/^Valor/);
+    await userEvent.clear(valor);
+    await userEvent.type(valor, "0");
+    expect(screen.getByText(/El margen es 0/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Cliente final"), "ACME");
+    await userEvent.click(screen.getByRole("button", { name: "Generar cotización y PDF" }));
+    expect(api.crearCotizacion).toHaveBeenCalledWith(expect.objectContaining({ valor_margen: 0 }));
+  });
+
+  it("sin cliente marca el campo y no genera", async () => {
+    await conSeleccion();
+    await userEvent.click(screen.getByRole("button", { name: "Generar cotización y PDF" }));
+    expect(screen.getByLabelText("Cliente final")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Cliente final")).toHaveFocus();
+    expect(api.crearCotizacion).not.toHaveBeenCalled();
+  });
+
+  it("COP sin tasa marca el campo y no genera", async () => {
+    await conSeleccion();
+    await userEvent.type(screen.getByLabelText("Cliente final"), "ACME");
+    await elegir(/Moneda de la cotización/, "COP");
+    await userEvent.clear(screen.getByLabelText(/Tasa de cambio/));
+    await userEvent.click(screen.getByRole("button", { name: "Generar cotización y PDF" }));
+    expect(screen.getByLabelText(/Tasa de cambio/)).toHaveAttribute("aria-invalid", "true");
+    expect(api.crearCotizacion).not.toHaveBeenCalled();
+  });
+
+  it("mientras genera muestra 'Generando…' y no envía dos veces", async () => {
+    let resolver;
+    api.crearCotizacion.mockReturnValue(new Promise((r) => { resolver = r; }));
+    await conSeleccion();
+    await userEvent.type(screen.getByLabelText("Cliente final"), "ACME");
+    await userEvent.click(screen.getByRole("button", { name: "Generar cotización y PDF" }));
+    const boton = screen.getByRole("button", { name: "Generando…" });
+    expect(boton).toBeDisabled();
+    fireEvent.submit(boton.closest("form"));
+    expect(api.crearCotizacion).toHaveBeenCalledTimes(1);
+    await act(async () => { resolver(cotizacion()); });
+    expect(await screen.findByText("Cotización generada")).toBeInTheDocument();
+  });
+
+  it("'Nueva cotización' limpia el cliente y vuelve al paso 1", async () => {
+    await conSeleccion();
+    await userEvent.type(screen.getByLabelText("Cliente final"), "ACME");
+    await userEvent.click(screen.getByRole("button", { name: "Generar cotización y PDF" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Nueva cotización" }));
+    expect(screen.getByLabelText(/1\. Origen/)).toHaveValue("");
+    expect(screen.getByLabelText(/1\. Origen/)).toHaveFocus();
+    expect(screen.queryByLabelText(/2\. Destino/)).not.toBeInTheDocument();
+    expect(document.querySelector('.stepper [aria-current="step"]')).toHaveTextContent("Ruta");
+
+    // Una nueva cotización por la misma ruta empieza con el cliente vacío.
+    await elegir(/1\. Origen/, "Shanghai");
+    await elegir(/2\. Destino/, "Cartagena");
+    await elegir(/3\. Tipo de mercancía/, "importacion");
+    await elegir(/4\. Tipo de ítem/, "contenedor_maritimo");
+    await userEvent.click(screen.getAllByRole("radio")[0]);
+    expect(screen.getByLabelText("Cliente final")).toHaveValue("");
+  });
+
+  it("el resultado muestra el precio con dos decimales y la fecha legible", async () => {
+    api.crearCotizacion.mockResolvedValue(cotizacion({ items: [{ precio_final: 3295 }] }));
+    await conSeleccion();
+    await userEvent.type(screen.getByLabelText("Cliente final"), "ACME");
+    await userEvent.click(screen.getByRole("button", { name: "Generar cotización y PDF" }));
+    expect(await screen.findByText("USD 3,295.00")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cotización generada" })).toHaveFocus();
+  });
+
+  it("informa si hay una cotización en curso (para confirmar antes de cambiar de rol)", async () => {
+    const onDirtyChange = vi.fn();
+    render(<WizardPage onDirtyChange={onDirtyChange} />);
+    await screen.findByRole("option", { name: "Shanghai" });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    await elegir(/1\. Origen/, "Shanghai");
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
 });

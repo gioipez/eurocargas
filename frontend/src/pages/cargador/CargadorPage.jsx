@@ -1,4 +1,3 @@
-import { useState } from "react";
 import EmpresasPage from "./EmpresasPage.jsx";
 import PuertosPage from "./PuertosPage.jsx";
 import ItemsPage from "./ItemsPage.jsx";
@@ -11,14 +10,19 @@ const TABS = [
   { id: "config", label: "Configuración" },
 ];
 
-export default function CargadorPage() {
-  const [tab, setTab] = useState("empresas");
-
+// La pestaña activa la controla App (vive en el hash de la URL).
+export default function CargadorPage({ tab = "empresas", onTab }) {
   return (
     <div>
       <nav className="tabs" aria-label="Secciones del Cargador">
         {TABS.map((t) => (
-          <button key={t.id} className={tab === t.id ? "active" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
+          <button
+            key={t.id}
+            type="button"
+            className={tab === t.id ? "active" : ""}
+            aria-current={tab === t.id ? "page" : undefined}
+            onClick={() => onTab?.(t.id)}
+          >
             {t.label}
           </button>
         ))}

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { estadoVigencia, formatRecargos, formatTransito, formatUsd, frecuenciaLabel, textoPorVencer } from "../labels.js";
+import {
+  estadoVigencia, formatCop, formatDelta, formatFecha, formatMoneda, formatRecargos, formatTransito, formatUsd, frecuenciaLabel,
+  textoPorVencer, tipoEmpresaLabel, tipoImportacionLabel, tipoItemLabel, vigenciaHasta,
+} from "../labels.js";
 import { makeItem, makeLegacyItem } from "../test/fixtures.js";
 
 describe("labels", () => {
@@ -27,12 +30,12 @@ describe("labels", () => {
     expect(formatTransito(2)).toBe("2 días");
   });
 
-  it("formatUsd agrega miles y siempre dos decimales, sin depender del idioma", () => {
-    expect(formatUsd(2996)).toBe("$2,996.00");
-    expect(formatUsd(12320000)).toBe("$12,320,000.00");
-    expect(formatUsd(3156.5)).toBe("$3,156.50");
-    expect(formatUsd(0)).toBe("$0.00");
-    expect(formatUsd(4.77)).toBe("$4.77");
+  it("formatUsd agrega código de moneda, miles y siempre dos decimales, sin depender del idioma", () => {
+    expect(formatUsd(2996)).toBe("USD 2,996.00");
+    expect(formatUsd(12320000)).toBe("USD 12,320,000.00");
+    expect(formatUsd(3156.5)).toBe("USD 3,156.50");
+    expect(formatUsd(0)).toBe("USD 0.00");
+    expect(formatUsd(4.77)).toBe("USD 4.77");
   });
 
   describe("estadoVigencia", () => {
@@ -57,5 +60,40 @@ describe("labels", () => {
     expect(textoPorVencer(0)).toBe("Vence hoy");
     expect(textoPorVencer(1)).toBe("Vence en 1 día");
     expect(textoPorVencer(5)).toBe("Vence en 5 días");
+  });
+
+  it("formatCop usa código y redondea a pesos enteros", () => {
+    expect(formatCop(12852840)).toBe("COP 12,852,840");
+    expect(formatCop(13182400.4)).toBe("COP 13,182,400");
+  });
+
+  it("formatMoneda elige el formato según la moneda", () => {
+    expect(formatMoneda(3295.6, "USD")).toBe("USD 3,295.60");
+    expect(formatMoneda(12852840, "COP")).toBe("COP 12,852,840");
+  });
+
+  it("formatDelta muestra la diferencia en USD y en porcentaje", () => {
+    expect(formatDelta(160.5, 2996)).toBe("+USD 160.50 · +5.4%");
+    expect(formatDelta(120, 1500)).toBe("+USD 120.00 · +8%");
+    expect(formatDelta(0, 0)).toBe("+USD 0.00 · +0%");
+  });
+
+  it("formatFecha es legible en español y no depende de la zona horaria ni del idioma", () => {
+    expect(formatFecha("2026-01-31")).toBe("31 ene 2026");
+    expect(formatFecha("2025-12-01T00:00:00")).toBe("1 dic 2025");
+    expect(formatFecha("2026-09-05")).toBe("5 sep 2026");
+    expect(formatFecha("")).toBe("");
+    expect(formatFecha("no-es-fecha")).toBe("no-es-fecha");
+  });
+
+  it("etiquetas humanas para los enums, con el valor crudo si es desconocido", () => {
+    expect(tipoEmpresaLabel("aerolinea")).toBe("Aerolínea");
+    expect(tipoImportacionLabel("exportacion")).toBe("Exportación");
+    expect(tipoItemLabel("lcl")).toBe("LCL / Fragmento");
+    expect(tipoEmpresaLabel("nuevo_tipo")).toBe("nuevo_tipo");
+  });
+
+  it("vigenciaHasta suma los días de vigencia a la fecha de creación", () => {
+    expect(vigenciaHasta({ fecha_creacion: "2026-01-01T12:00:00", vigencia_dias: 30 })).toBe("2026-01-31");
   });
 });

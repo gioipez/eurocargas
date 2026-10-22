@@ -221,4 +221,7 @@ def test_pdf_conserva_el_nombre_de_empresa_de_la_emision(client, empresa, puerto
         db.get(models.Empresa, empresa["id"]).nombre = "Renombrada S.A."
         db.commit()
         html = render_cotizacion_html(_con_relaciones(db, cot["id"]))
-    assert "Maersk" in html and "Renombrada" not in html
+    # El PDF es para el cliente final: no muestra el proveedor (ni el original ni el renombrado);
+    # el snapshot del nombre se sigue conservando en la cotización emitida.
+    assert "Maersk" not in html and "Renombrada" not in html
+    assert client.get(f"/api/cotizaciones/{cot['id']}").json()["items"][0]["empresa_nombre"] == "Maersk"

@@ -22,7 +22,7 @@ describe("ComparisonTable", () => {
   it("muestra recargos, incoterm, tránsito, frecuencia y costo total", () => {
     renderTabla([fila(makeItem(), 2996)]);
     const celdas = within(screen.getAllByRole("row")[1]).getAllByRole("cell").map((c) => c.textContent);
-    expect(celdas).toEqual(expect.arrayContaining(["BAF 4.0% · THC 3.0%", "FOB", "32 días", "Semanal", "$2,996.00", "2026-01-31"]));
+    expect(celdas).toEqual(expect.arrayContaining(["BAF 4.0% · THC 3.0%", "FOB", "32 días", "Semanal", "USD 2,996.00", "31 ene 2026"]));
   });
 
   it("ordena por precio por defecto", () => {
@@ -165,5 +165,59 @@ describe("ComparisonTable", () => {
       renderTabla([fila(item(1, "Maersk"), 1)]);
       expect(screen.getByRole("radio", { name: "Seleccionar Maersk · Contenedor 40' estándar" })).toBeInTheDocument();
     });
+  });
+});
+
+describe("ComparisonTable — mejor opción", () => {
+  const filaDe = (nombre) => screen.getByText(nombre).closest("tr");
+
+  it("marca la más económica y la más rápida del grupo, con la diferencia frente a la más barata", () => {
+    renderTabla([
+      fila(item(1, "Barata", { transito_dias: 32 }), 2996),
+      fila(item(2, "Rapida", { transito_dias: 28 }), 3156.5),
+      fila(item(3, "Cara", { transito_dias: 40 }), 3595.2),
+    ]);
+    expect(within(filaDe("Barata")).getByText("Más económica")).toBeInTheDocument();
+    expect(filaDe("Barata")).toHaveClass("mejor");
+    expect(within(filaDe("Rapida")).getByText("Más rápida")).toBeInTheDocument();
+    expect(within(filaDe("Rapida")).getByText("+USD 160.50 · +5.4%")).toBeInTheDocument();
+    expect(within(filaDe("Cara")).getByText("+USD 599.20 · +20%")).toBeInTheDocument();
+    expect(filaDe("Cara")).not.toHaveClass("mejor");
+    expect(within(filaDe("Cara")).queryByText(/Más /)).not.toBeInTheDocument();
+  });
+
+  it("las insignias no dependen del orden elegido", async () => {
+    renderTabla([fila(item(1, "Barata", { transito_dias: 40 }), 1000), fila(item(2, "Rapida", { transito_dias: 10 }), 2000)]);
+    await userEvent.selectOptions(screen.getByLabelText("Ordenar por"), "transito");
+    expect(within(filaDe("Barata")).getByText("Más económica")).toBeInTheDocument();
+    expect(within(filaDe("Rapida")).getByText("Más rápida")).toBeInTheDocument();
+  });
+
+  it("se calculan por grupo de servicio", () => {
+    renderTabla([
+      fila(item(1, "A20", { descripcion: "Contenedor 20' estándar" }), 1000),
+      fila(item(2, "B20", { descripcion: "Contenedor 20' estándar" }), 1200),
+      fila(item(3, "A40", { descripcion: "Contenedor 40' estándar" }), 2500),
+      fila(item(4, "B40", { descripcion: "Contenedor 40' estándar" }), 2000),
+    ]);
+    expect(screen.getAllByText("Más económica").map((b) => b.closest("tr").querySelector(".empresa-nombre").textContent)).toEqual(["A20", "B40"]);
+  });
+
+  it("una sola oferta no recibe insignias ni diferencia", () => {
+    renderTabla([fila(item(1, "Sola"), 1000)]);
+    expect(screen.queryByText("Más económica")).not.toBeInTheDocument();
+    expect(filaDe("Sola")).not.toHaveClass("mejor");
+  });
+
+  it("sin dato de tránsito no se marca como más rápida", () => {
+    renderTabla([fila(makeLegacyItem({ id: 1, empresa: { id: 1, nombre: "SinDato", tipo: "naviera" } }), 1), fila(item(2, "Con", { transito_dias: 30 }), 2)]);
+    expect(within(filaDe("Con")).getByText("Más rápida")).toBeInTheDocument();
+    expect(within(filaDe("SinDato")).queryByText("Más rápida")).not.toBeInTheDocument();
+  });
+
+  it("encabezado accesible para la columna de selección y tarifa alineada a la derecha", () => {
+    renderTabla([fila(item(1, "A"), 1)]);
+    expect(screen.getByRole("columnheader", { name: "Seleccionar" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Tarifa" })).toHaveClass("num");
   });
 });

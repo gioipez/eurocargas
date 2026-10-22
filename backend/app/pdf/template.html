@@ -2,112 +2,121 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
+{#- Documento para el cliente final: no incluye costo del proveedor, margen, tipo de margen ni proveedor. -#}
+{%- set MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] -%}
+{%- macro fecha(d) -%}{{ d.day }} {{ MESES[d.month - 1] }} {{ d.year }}{%- endmacro -%}
+{%- set FRECUENCIAS = {"diaria": "diaria", "semanal": "semanal", "quincenal": "quincenal", "mensual": "mensual"} -%}
+{%- set UNIDADES = {"por_contenedor": ["contenedor", "contenedores"], "por_kg": ["kg", "kg"], "por_cbm_wm": ["CBM / W-M", "CBM / W-M"]} -%}
+{%- macro cantidad(ci) -%}
+    {%- set n = ("%.2f"|format(ci.cantidad)).rstrip("0").rstrip(".") -%}
+    {%- set u = UNIDADES.get(ci.item.unidad_tarifa.value) if ci.item else none -%}
+    {%- if u -%}{{ n }} {{ u[0] if ci.cantidad == 1 else u[1] }}{%- else -%}{{ n }}{%- endif -%}
+{%- endmacro -%}
 <style>
-    @page { size: A4; margin: 2.2cm; }
-    body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1f2937; font-size: 12px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0f4c81; padding-bottom: 16px; margin-bottom: 24px; }
-    .logo-placeholder {
-        width: 140px; height: 60px; background: #0f4c81; color: #fff;
-        display: flex; align-items: center; justify-content: center;
-        font-weight: bold; font-size: 14px; letter-spacing: 1px; border-radius: 4px;
+    @page {
+        size: A4;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        margin: 2cm 2cm 2.4cm;
+        @bottom-left { content: "Eurocargas · {{ cotizacion.consecutivo }}"; font-size: 8.5pt; color: #636c7c; }
+        @bottom-right { content: "Página " counter(page) " de " counter(pages); font-size: 8.5pt; color: #636c7c; }
     }
-    .titulo { text-align: right; }
-    .titulo h1 { margin: 0; font-size: 20px; color: #0f4c81; }
-    .titulo .consecutivo { font-size: 16px; font-weight: bold; margin-top: 4px; }
-    .meta-table { width: 100%; margin-bottom: 24px; border-collapse: collapse; }
-    .meta-table td { padding: 4px 0; font-size: 12px; }
-    .meta-table td.label { color: #6b7280; width: 160px; }
-    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-    .items-table th { background: #0f4c81; color: #fff; text-align: left; padding: 8px; font-size: 11px; }
-    .items-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
-    .items-table tr.total-row td { border-top: 2px solid #0f4c81; border-bottom: none; font-weight: bold; font-size: 13px; }
-    .condiciones { color: #6b7280; font-size: 10px; margin-top: 2px; }
-    .text-right { text-align: right; }
-    .vigencia-box { background: #fef3c7; border: 1px solid #f59e0b; padding: 10px 14px; border-radius: 4px; font-size: 12px; margin-bottom: 16px; }
-    .footer { margin-top: 40px; font-size: 10px; color: #9ca3af; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        color: #161a21; font-size: 10pt; line-height: 1.45; margin: 0;
+    }
+    table { border-collapse: collapse; width: 100%; }
+    .header td { vertical-align: top; padding: 0; }
+    .marca { font-size: 15pt; font-weight: 700; color: #0f4c81; letter-spacing: 0.2px; }
+    .marca-sub { color: #545d6c; font-size: 9pt; margin-top: 2px; }
+    .doc { text-align: right; }
+    .doc-tipo { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.6px; color: #545d6c; }
+    .doc-numero { font-size: 15pt; font-weight: 700; margin-top: 2px; }
+    .regla { border: none; border-top: 2px solid #0f4c81; margin: 14px 0 18px; }
+    .meta td { padding: 0 16px 0 0; vertical-align: top; width: 33%; }
+    .etiqueta { display: block; font-size: 8.5pt; color: #545d6c; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 2px; }
+    .valor { font-weight: 600; }
+    h2 { font-size: 10.5pt; margin: 24px 0 8px; color: #161a21; }
+    .servicios th {
+        text-align: left; font-size: 8.5pt; font-weight: 600; color: #545d6c; text-transform: uppercase; letter-spacing: 0.4px;
+        padding: 7px 8px; border-bottom: 1px solid #c5cbd4; background: #f5f6f8;
+    }
+    .servicios td { padding: 10px 8px; border-bottom: 1px solid #dde1e7; vertical-align: top; }
+    .servicios .num { text-align: right; white-space: nowrap; }
+    .descripcion { font-weight: 600; }
+    .condiciones { color: #545d6c; font-size: 9pt; margin-top: 3px; }
+    .total td { border-bottom: none; border-top: 2px solid #0f4c81; padding-top: 10px; font-size: 11pt; font-weight: 700; }
+    .total .etiqueta-total { text-align: right; color: #545d6c; font-weight: 600; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.4px; }
+    .total .monto { color: #0f4c81; }
+    .nota { margin-top: 18px; padding: 10px 12px; border-left: 3px solid #0f4c81; background: #eef5fc; font-size: 9pt; }
+    .nota p { margin: 0; }
+    .nota p + p { margin-top: 4px; }
 </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo-placeholder">EUROCARGAS</div>
-        <div class="titulo">
-            <h1>Cotización de Servicio Logístico</h1>
-            <div class="consecutivo">{{ cotizacion.consecutivo }}</div>
-        </div>
-    </div>
-
-    <table class="meta-table">
+    <table class="header">
         <tr>
-            <td class="label">Cliente</td>
-            <td>{{ cotizacion.cliente_nombre }}</td>
-            <td class="label">Fecha de emisión</td>
-            <td>{{ cotizacion.fecha.strftime("%Y-%m-%d") }}</td>
+            <td>
+                <div class="marca">EUROCARGAS</div>
+                <div class="marca-sub">Servicios de transporte internacional de carga</div>
+            </td>
+            <td class="doc">
+                <div class="doc-tipo">Cotización</div>
+                <div class="doc-numero">{{ cotizacion.consecutivo }}</div>
+            </td>
         </tr>
+    </table>
+    <hr class="regla" />
+
+    <table class="meta">
         <tr>
-            <td class="label">Moneda</td>
-            <td>{{ cotizacion.moneda.value }}</td>
-            <td class="label">Tasa de cambio aplicada</td>
-            <td>{{ "%.2f"|format(cotizacion.tasa_cambio) }} COP/USD</td>
+            <td><span class="etiqueta">Cliente</span><span class="valor">{{ cotizacion.cliente_nombre | e }}</span></td>
+            <td><span class="etiqueta">Fecha de emisión</span><span class="valor">{{ fecha(cotizacion.fecha) }}</span></td>
+            <td><span class="etiqueta">Válida hasta</span><span class="valor">{{ fecha(cotizacion.vigencia_hasta) }}</span></td>
         </tr>
     </table>
 
-    <div class="vigencia-box">
-        Esta cotización tiene una vigencia hasta el <strong>{{ cotizacion.vigencia_hasta.strftime("%Y-%m-%d") }}</strong>
-        (vigencia más corta entre los ítems incluidos).
-    </div>
-
-    <table class="items-table">
+    <h2>Servicios cotizados</h2>
+    <table class="servicios">
         <thead>
             <tr>
-                <th>Empresa</th>
                 <th>Servicio</th>
                 <th>Ruta</th>
-                <th class="text-right">Cantidad</th>
-                <th class="text-right">Costo original</th>
-                <th class="text-right">Margen</th>
-                <th class="text-right">Precio final</th>
+                <th class="num">Cantidad</th>
+                <th class="num">Precio ({{ cotizacion.moneda.value }})</th>
             </tr>
         </thead>
         <tbody>
             {% for ci in cotizacion.items %}
             <tr>
-                <td>{{ ci.empresa_nombre }}</td>
                 <td>
-                    {{ ci.descripcion }}
+                    <div class="descripcion">{{ ci.descripcion | e }}</div>
                     {% if ci.incoterm or ci.transito_dias or ci.frecuencia %}
                     <div class="condiciones">
                         {%- set partes = [] -%}
                         {%- if ci.incoterm %}{% set _ = partes.append("Incoterm " ~ ci.incoterm.value) %}{% endif -%}
-                        {%- if ci.transito_dias %}{% set _ = partes.append("Tránsito " ~ ci.transito_dias ~ " días") %}{% endif -%}
-                        {%- if ci.frecuencia %}{% set _ = partes.append("Salidas " ~ ci.frecuencia.value) %}{% endif -%}
+                        {%- if ci.transito_dias %}{% set _ = partes.append("Tránsito " ~ ci.transito_dias ~ (" día" if ci.transito_dias == 1 else " días")) %}{% endif -%}
+                        {%- if ci.frecuencia %}{% set _ = partes.append("Salidas " ~ FRECUENCIAS.get(ci.frecuencia.value, ci.frecuencia.value)) %}{% endif -%}
                         {{ partes | join(" · ") }}
                     </div>
                     {% endif %}
                 </td>
-                <td>{{ ci.origen }} &rarr; {{ ci.destino }}</td>
-                <td class="text-right">{{ "%.2f"|format(ci.cantidad) }}</td>
-                <td class="text-right">{{ simbolo }}{{ "{:,.2f}".format(ci.costo_original * factor) }}</td>
-                <td class="text-right">{{ simbolo }}{{ "{:,.2f}".format(ci.margen_aplicado * factor) }}</td>
-                <td class="text-right">{{ simbolo }}{{ "{:,.2f}".format(ci.precio_final * factor) }}</td>
+                <td>{{ ci.origen | e }} &rarr; {{ ci.destino | e }}</td>
+                <td class="num">{{ cantidad(ci) }}</td>
+                <td class="num">{{ simbolo }}{{ "{:,.2f}".format(ci.precio_final * factor) }}</td>
             </tr>
             {% endfor %}
-            <tr class="total-row">
-                <td colspan="6">TOTAL</td>
-                <td class="text-right">{{ simbolo }}{{ "{:,.2f}".format(total * factor) }}</td>
+            <tr class="total">
+                <td colspan="3" class="etiqueta-total">Total ({{ cotizacion.moneda.value }})</td>
+                <td class="num monto">{{ simbolo }}{{ "{:,.2f}".format(total * factor) }}</td>
             </tr>
         </tbody>
     </table>
 
-    <table class="meta-table">
-        <tr>
-            <td class="label">Tipo de margen aplicado</td>
-            <td>{{ tipo_margen_label }}</td>
-        </tr>
-    </table>
-
-    <div class="footer">
-        Cotización generada automáticamente — POC Eurocargas. Todos los costos internos se manejan en USD;
-        los valores en COP corresponden a la tasa de cambio indicada arriba, vigente únicamente para esta cotización.
+    <div class="nota">
+        <p>Esta cotización es válida hasta el <strong>{{ fecha(cotizacion.vigencia_hasta) }}</strong>. Pasada esa fecha, los valores deben confirmarse nuevamente.</p>
+        {% if cotizacion.moneda.value == "COP" %}
+        <p>Valores en pesos colombianos calculados con una tasa de cambio de {{ "%.2f"|format(cotizacion.tasa_cambio) }} COP/USD, aplicable únicamente a esta cotización.</p>
+        {% endif %}
     </div>
 </body>
 </html>

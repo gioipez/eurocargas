@@ -1,5 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
-import { UNIDAD_CORTA, estadoVigencia, formatRecargos, formatTransito, formatUsd, frecuenciaLabel, textoPorVencer } from "../labels.js";
+import {
+  UNIDAD_CORTA, estadoVigencia, formatDelta, formatFecha, formatRecargos, formatTransito, formatUsd, frecuenciaLabel, textoPorVencer,
+} from "../labels.js";
 
 const ORDENES = {
   precio: { label: "Precio (menor a mayor)", cmp: (a, b) => a.costoTotal - b.costoTotal },
@@ -33,6 +35,9 @@ export default function ComparisonTable({ filas, seleccionadoId, onSeleccionar }
         filas: [...fs].sort(ORDENES[orden].cmp),
         // Precios con distinto Incoterm no cubren lo mismo; "sin dato" cuenta como un valor aparte.
         incoterms: [...new Set(fs.map((f) => f.item.incoterm ?? "sin dato"))],
+        // Referencias del grupo (independientes del orden elegido): menor costo total y menor tránsito conocido.
+        minCosto: Math.min(...fs.map((f) => f.costoTotal)),
+        minTransito: Math.min(...fs.map((f) => f.item.transito_dias ?? Infinity)),
       }))
       .sort((a, b) => a.servicio.localeCompare(b.servicio));
   }, [filas, orden]);
@@ -43,6 +48,8 @@ export default function ComparisonTable({ filas, seleccionadoId, onSeleccionar }
 
   const variosGrupos = grupos.length > 1;
   const avisoIncoterm = (g) => `Las ofertas no cubren el mismo Incoterm (${g.incoterms.join(", ")}): los precios no son directamente comparables.`;
+
+  const COLUMNAS = 11;
 
   const onFilaClick = (e, id) => {
     if (e.target.tagName !== "INPUT") onSeleccionar(id); // el radio ya notifica su propio cambio
@@ -64,19 +71,21 @@ export default function ComparisonTable({ filas, seleccionadoId, onSeleccionar }
         </div>
       </div>
       <div className="table-wrap">
-        <table>
+        <table className="comparison-table">
+          <caption className="sr-only">Ofertas de los proveedores; seleccione una para cotizar</caption>
           <thead>
             <tr>
-              <th></th>
-              <th>Empresa</th>
-              <th>Servicio</th>
-              <th>Tarifa</th>
-              <th>Recargos</th>
-              <th>Incoterm</th>
-              <th>Tránsito</th>
-              <th>Salidas</th>
-              <th className="num">Costo total (USD, con recargos)</th>
-              <th>Vigente hasta</th>
+              <th scope="col" className="col-select"><span className="sr-only">Seleccionar</span></th>
+              <th scope="col">Empresa</th>
+              <th scope="col">Servicio</th>
+              <th scope="col" className="num">Tarifa</th>
+              <th scope="col">Recargos</th>
+              <th scope="col">Incoterm</th>
+              <th scope="col">Tránsito</th>
+              <th scope="col">Salidas</th>
+              <th scope="col" className="num">Costo total (USD, con recargos)</th>
+              <th scope="col">Frente a la más económica</th>
+              <th scope="col">Vigente hasta</th>
             </tr>
           </thead>
           <tbody className="clickable">
@@ -84,7 +93,7 @@ export default function ComparisonTable({ filas, seleccionadoId, onSeleccionar }
               <Fragment key={g.servicio}>
               {variosGrupos && (
                 <tr className="grupo-header">
-                  <td colSpan={10}>
+                  <td colSpan={COLUMNAS}>
                     {g.servicio} · {g.filas.length} {g.filas.length === 1 ? "oferta" : "ofertas"}
                     {g.incoterms.length > 1 && (
                       <>{" "}<span className="chip warn" title={avisoIncoterm(g)}>Incoterms distintos: {g.incoterms.join(", ")}</span></>
@@ -92,11 +101,19 @@ export default function ComparisonTable({ filas, seleccionadoId, onSeleccionar }
                   </td>
                 </tr>
               )}
-              {g.filas.map((f) => (
+              {g.filas.map((f) => {
+                const comparable = g.filas.length > 1;
+                const esEconomica = comparable && f.costoTotal === g.minCosto;
+                const esRapida = comparable && f.item.transito_dias != null && f.item.transito_dias === g.minTransito;
+                return (
                 <tr
                   key={f.item.id}
                   data-fila
-                  className={[f.item.id === seleccionadoId && "selected", estadoVigencia(f.vigenciaHasta).estado === "vencida" && "vencida"].filter(Boolean).join(" ")}
+                  className={[
+                    f.item.id === seleccionadoId && "selected",
+                    esEconomica && "mejor",
+                    estadoVigencia(f.vigenciaHasta).estado === "vencida" && "vencida",
+                  ].filter(Boolean).join(" ")}
                   onClick={(e) => onFilaClick(e, f.item.id)}
                 >
                   <td>
@@ -113,15 +130,21 @@ export default function ComparisonTable({ filas, seleccionadoId, onSeleccionar }
                     <div className="tags"><TagsVigencia vigenciaHasta={f.vigenciaHasta} /></div>
                   </td>
                   <td>{f.item.descripcion}</td>
-                  <td className="nowrap">{formatUsd(f.item.costo_base)} <span className="muted">{UNIDAD_CORTA[f.item.unidad_tarifa]}</span></td>
+                  <td className="num nowrap">{formatUsd(f.item.costo_base)} <span className="cell-meta">{UNIDAD_CORTA[f.item.unidad_tarifa]}</span></td>
                   <td className="muted">{formatRecargos(f.item)}</td>
                   <td>{f.item.incoterm ?? <span className="muted">Sin dato</span>}</td>
                   <td>{formatTransito(f.item.transito_dias)}</td>
                   <td>{frecuenciaLabel(f.item.frecuencia)}</td>
                   <td className="num total">{formatUsd(f.costoTotal)}</td>
-                  <td>{f.vigenciaHasta}</td>
+                  <td className="comparacion">
+                    {esEconomica && <span className="badge badge-best">Más económica</span>}
+                    {esRapida && <span className="badge badge-fast">Más rápida</span>}
+                    {comparable && !esEconomica && <span className="delta">{formatDelta(f.costoTotal - g.minCosto, g.minCosto)}</span>}
+                  </td>
+                  <td className="nowrap">{formatFecha(f.vigenciaHasta)}</td>
                 </tr>
-              ))}
+                );
+              })}
               </Fragment>
             ))}
           </tbody>

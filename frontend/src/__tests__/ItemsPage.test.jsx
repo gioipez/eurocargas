@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api.js";
@@ -293,5 +293,67 @@ describe("ItemsPage — UX", () => {
     await renderizar();
     const secciones = screen.getAllByRole("group").map((g) => g.querySelector("legend")?.textContent);
     expect(secciones).toEqual(expect.arrayContaining(["Servicio", "Ruta", "Tarifa y vigencia", "Condiciones de la oferta", "Desglose de recargos (opcional)"]));
+  });
+});
+
+describe("ItemsPage — tabla y formulario (rediseño)", () => {
+  it("la columna de la descripción se llama Servicio y muestra tipo e importación legibles", async () => {
+    await renderizar();
+    expect(screen.getByRole("columnheader", { name: "Servicio" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Tipo" })).not.toBeInTheDocument();
+    const fila = screen.getByText("Contenedor 40' estándar", { selector: "td" }).closest("tr");
+    expect(within(fila).getByText("Contenedor marítimo (FCL) · Importación")).toBeInTheDocument();
+  });
+
+  it("la vigencia muestra la fecha de vencimiento y marca las vencidas o por vencer", async () => {
+    api.listarItems.mockResolvedValue([
+      makeItem(),
+      makeItem({ id: 2, descripcion: "Vieja", fecha_creacion: "2025-11-01T12:00:00", vigencia_dias: 30 }),
+      makeItem({ id: 3, descripcion: "Pronto", fecha_creacion: "2026-01-10T12:00:00", vigencia_dias: 8 }),
+    ]);
+    await renderizar();
+    const fila = (t) => screen.getByText(t, { selector: "td" }).closest("tr");
+    expect(within(fila("Contenedor 40' estándar")).getByText(/Hasta 31 ene 2026/)).toBeInTheDocument();
+    expect(fila("Contenedor 40' estándar").querySelector(".chip")).toBeNull();
+    expect(within(fila("Vieja")).getByText("Vencida")).toBeInTheDocument();
+    expect(within(fila("Pronto")).getByText("Vence en 3 días")).toBeInTheDocument();
+  });
+
+  it("el selector de importación muestra etiquetas legibles con los mismos valores", async () => {
+    await renderizar();
+    expect(within(campo(/^Tipo de importación/)).getByRole("option", { name: "Exportación" })).toHaveValue("exportacion");
+  });
+
+  it("al empezar a editar el foco va al primer campo", async () => {
+    await renderizar();
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    expect(campo(/^Empresa/)).toHaveFocus();
+  });
+
+  it("enviar incompleto marca los campos inválidos y enfoca el primero", async () => {
+    await renderizar();
+    await enviar("Agregar ítem");
+    expect(campo(/^Empresa/)).toHaveFocus();
+    expect(campo(/^Empresa/)).toHaveAttribute("aria-invalid", "true");
+    expect(campo(/^Incoterm/)).toHaveAccessibleDescription("Selecciona una opción.");
+    expect(api.crearItem).not.toHaveBeenCalled();
+  });
+
+  it("mientras guarda deshabilita el envío", async () => {
+    let resolver;
+    api.crearItem.mockReturnValue(new Promise((r) => { resolver = r; }));
+    await renderizar();
+    await completarAlta();
+    await enviar("Agregar ítem");
+    expect(screen.getByRole("button", { name: "Guardando…" })).toBeDisabled();
+    await act(async () => { resolver({}); });
+    expect(screen.getByRole("button", { name: "Agregar ítem" })).toBeEnabled();
+  });
+
+  it("si falla la carga no invita a crear el primero", async () => {
+    api.listarItems.mockRejectedValue(new Error("sin conexión"));
+    render(<ItemsPage />);
+    await screen.findByText("sin conexión");
+    expect(screen.queryByText(/Aún no hay ítems/)).not.toBeInTheDocument();
   });
 });
